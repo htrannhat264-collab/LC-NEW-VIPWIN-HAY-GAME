@@ -10,31 +10,23 @@ app.use(express.json());
 const PORT = process.env.PORT || 5000;
 
 // ================================================================
-// ĐƯỜNG DẪN FILE LƯU DATA
+// FILE LƯU DATA
 // ================================================================
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-// ================================================================
-// HÀM ĐỌC/GHI DATA
-// ================================================================
 function readData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf8');
-      return JSON.parse(raw);
+      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     }
-  } catch (e) {
-    console.log('Lỗi đọc file data, tạo mới');
-  }
+  } catch (e) {}
   return null;
 }
 
 function writeData(data) {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.log('Lỗi ghi file data');
-  }
+  } catch (e) {}
 }
 
 // ================================================================
@@ -52,27 +44,25 @@ const GAME_CONFIG = {
 };
 
 // ================================================================
-// KHỞI TẠO STORE - ĐỌC TỪ FILE HOẶC TẠO MỚI
+// KHỞI TẠO STORE
 // ================================================================
 let store = {};
 
 function initStore() {
   const saved = readData();
-  if (saved) {
+  if (saved && Object.keys(saved).length > 0) {
     store = saved;
-    console.log('✅ Đã load dữ liệu từ file');
+    console.log('✅ Load data từ file');
     return;
   }
 
-  // Tạo mới nếu chưa có
   for (let key in GAME_CONFIG) {
     store[key] = {
       history: [],
       predictHistory: [],
       stats: { 
-        tong: 0, dung: 0, sai: 0, tiLe: '0%', 
-        winStreak: 0, maxWinStreak: 0, loseStreak: 0, maxLoseStreak: 0,
-        tongTien: 0, loiNhuan: 0, tyLeThang: 0
+        tong: 0, dung: 0, sai: 0, tiLe: '0%',
+        winStreak: 0, maxWinStreak: 0, loseStreak: 0, maxLoseStreak: 0
       },
       statsAdv: { 
         skewness: 0, kurtosis: 0, entropy: 0, variance: 0, stdDev: 0,
@@ -84,21 +74,21 @@ function initStore() {
       memory: {
         streak: { current: 0, max: 0 },
         zigzag: { pattern: [], length: 0 },
-        markov: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} },
+        markov: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {}, 10: {} },
         cycle: { detected: false, length: 0, confidence: 0 },
         pattern: { templates: [], matches: 0 },
-        neural: { weights: [0.5, 0.5, 0.5, 0.5, 0.5], bias: 0 }
+        neural: { weights: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], bias: 0 }
       }
     };
   }
   writeData(store);
-  console.log('✅ Đã tạo mới dữ liệu');
+  console.log('✅ Tạo mới data');
 }
 
 initStore();
 
 // ================================================================
-// HÀM TOÁN
+// HÀM TOÁN NÂNG CẤP
 // ================================================================
 function mean(arr) {
   if (!arr || arr.length === 0) return 0;
@@ -248,6 +238,36 @@ function adxCalculator(history, period = 14) {
   return dx;
 }
 
+function aroonIndicator(history, period = 14) {
+  if (history.length < period) return { up: 0, down: 0 };
+  const num = history.map(r => r === 'Tài' ? 1 : 0);
+  const recent = num.slice(0, period);
+  const maxIdx = recent.indexOf(Math.max(...recent));
+  const minIdx = recent.indexOf(Math.min(...recent));
+  return { up: ((period - 1 - maxIdx) / (period - 1)) * 100, down: ((period - 1 - minIdx) / (period - 1)) * 100 };
+}
+
+function chaikinMoneyFlow(history, period = 20) {
+  if (history.length < period) return 0;
+  const num = history.map(r => r === 'Tài' ? 1 : 0);
+  const mf = [];
+  for (let i = 0; i < num.length - 1; i++) {
+    mf.push(num[i + 1] - num[i]);
+  }
+  return mean(mf);
+}
+
+function obvCalculator(history) {
+  if (history.length < 2) return 0;
+  const num = history.map(r => r === 'Tài' ? 1 : 0);
+  let obv = 0;
+  for (let i = 0; i < num.length - 1; i++) {
+    if (num[i + 1] > num[i]) obv += num[i + 1];
+    else obv -= num[i + 1];
+  }
+  return obv;
+}
+
 function chuanHoa(kq) {
   if (!kq) return null;
   const s = String(kq).toLowerCase().trim();
@@ -257,7 +277,7 @@ function chuanHoa(kq) {
 }
 
 // ================================================================
-// 20 THUẬT TOÁN
+// 30 THUẬT TOÁN NÂNG CẤP - MỖI PHIÊN CHO TỈ LỆ RIÊNG
 // ================================================================
 function runAlgorithms(h, memory) {
   const results = [];
@@ -269,138 +289,115 @@ function runAlgorithms(h, memory) {
       if (h[i] === h[0]) s++;
       else break;
     }
-    if (s >= 3) {
+    if (s >= 2) {
       const p = h[0] === 'Tài' ? 'Xỉu' : 'Tài';
-      let conf = 60 + s * 10;
-      if (s >= 5) conf = Math.min(99, 80 + (s - 4) * 8);
+      let conf = 55 + s * 8;
+      if (s >= 5) conf = Math.min(98, 75 + (s - 4) * 8);
       results.push({ ten: 'Streak', du_doan: p, do_tin_cay: conf, mo_ta: `Bệt ${s} phiên` });
     }
   }
 
   // 2. Zigzag
-  if (h.length >= 4) {
+  if (h.length >= 3) {
     let zigzag = true, length = 0;
     for (let i = 1; i < Math.min(h.length, 10); i++) {
       if (h[i] === h[i - 1]) { zigzag = false; break; }
       length++;
     }
-    if (zigzag && length >= 3) {
+    if (zigzag && length >= 2) {
       const p = h[0] === 'Tài' ? 'Xỉu' : 'Tài';
-      let conf = 75 + length * 3;
-      results.push({ ten: 'Zigzag', du_doan: p, do_tin_cay: Math.min(94, conf), mo_ta: `Cầu 1-1 dài ${length+1} phiên` });
+      let conf = 65 + length * 4;
+      results.push({ ten: 'Zigzag', du_doan: p, do_tin_cay: Math.min(92, conf), mo_ta: `Cầu 1-1 dài ${length+1} phiên` });
     }
   }
 
   // 3. Momentum
-  if (h.length >= 6) {
+  if (h.length >= 4) {
     const num = h.map(r => r === 'Tài' ? 1 : 0);
-    const recent = num.slice(0, 3);
-    const older = num.slice(3, 6);
-    const mRecent = mean(recent);
-    const mOlder = mean(older);
-    const diff = mRecent - mOlder;
-    if (Math.abs(diff) > 0.2) {
+    const recent = num.slice(0, 2);
+    const older = num.slice(2, 4);
+    const diff = mean(recent) - mean(older);
+    if (Math.abs(diff) > 0.15) {
       const p = diff > 0 ? 'Xỉu' : 'Tài';
-      results.push({ ten: 'Momentum', du_doan: p, do_tin_cay: 70 + Math.abs(diff) * 40, mo_ta: `Động lượng ${diff > 0 ? 'Tài' : 'Xỉu'}` });
+      results.push({ ten: 'Momentum', du_doan: p, do_tin_cay: 65 + Math.abs(diff) * 50, mo_ta: `Động lượng ${(diff*100).toFixed(1)}%` });
     }
   }
 
   // 4. Volatility
-  if (h.length >= 8) {
+  if (h.length >= 6) {
     const num = h.map(r => r === 'Tài' ? 1 : 0);
     const vol = stddev(num);
-    if (vol > 0.45) {
-      const last = h[0];
-      const p = last === 'Tài' ? 'Xỉu' : 'Tài';
-      results.push({ ten: 'Volatility', du_doan: p, do_tin_cay: 65 + vol * 30, mo_ta: `Biến động ${vol.toFixed(2)}` });
+    if (vol > 0.4) {
+      const p = h[0] === 'Tài' ? 'Xỉu' : 'Tài';
+      results.push({ ten: 'Volatility', du_doan: p, do_tin_cay: 60 + vol * 40, mo_ta: `Biến động ${vol.toFixed(2)}` });
     }
   }
 
-  // 5. Freq 5
+  // 5. Freq 3
+  if (h.length >= 3) {
+    const last3 = h.slice(0, 3);
+    const t = last3.filter(r => r === 'Tài').length;
+    if (t >= 2) results.push({ ten: 'Freq 3', du_doan: 'Xỉu', do_tin_cay: 68, mo_ta: '3 phiên có 2 Tài' });
+    else if (t <= 1) results.push({ ten: 'Freq 3', du_doan: 'Tài', do_tin_cay: 68, mo_ta: '3 phiên có 2 Xỉu' });
+  }
+
+  // 6. Freq 5
   if (h.length >= 5) {
     const last5 = h.slice(0, 5);
     const t = last5.filter(r => r === 'Tài').length;
-    if (t >= 4) results.push({ ten: 'Freq 5', du_doan: 'Xỉu', do_tin_cay: 82, mo_ta: '5 phiên có 4 Tài' });
-    else if (t <= 1) results.push({ ten: 'Freq 5', du_doan: 'Tài', do_tin_cay: 82, mo_ta: '5 phiên có 4 Xỉu' });
+    if (t >= 3) results.push({ ten: 'Freq 5', du_doan: 'Xỉu', do_tin_cay: 75, mo_ta: '5 phiên có 3 Tài' });
+    else if (t <= 2) results.push({ ten: 'Freq 5', du_doan: 'Tài', do_tin_cay: 75, mo_ta: '5 phiên có 3 Xỉu' });
   }
 
-  // 6. Freq 10
+  // 7. Freq 8
+  if (h.length >= 8) {
+    const last8 = h.slice(0, 8);
+    const t = last8.filter(r => r === 'Tài').length;
+    if (t >= 5) results.push({ ten: 'Freq 8', du_doan: 'Xỉu', do_tin_cay: 80, mo_ta: '8 phiên có 5 Tài' });
+    else if (t <= 3) results.push({ ten: 'Freq 8', du_doan: 'Tài', do_tin_cay: 80, mo_ta: '8 phiên có 5 Xỉu' });
+  }
+
+  // 8. Freq 10
   if (h.length >= 10) {
     const last10 = h.slice(0, 10);
     const t = last10.filter(r => r === 'Tài').length;
-    if (t >= 7) results.push({ ten: 'Freq 10', du_doan: 'Xỉu', do_tin_cay: 87, mo_ta: '10 phiên có 7 Tài' });
-    else if (t <= 3) results.push({ ten: 'Freq 10', du_doan: 'Tài', do_tin_cay: 87, mo_ta: '10 phiên có 7 Xỉu' });
+    if (t >= 6) results.push({ ten: 'Freq 10', du_doan: 'Xỉu', do_tin_cay: 83, mo_ta: '10 phiên có 6 Tài' });
+    else if (t <= 4) results.push({ ten: 'Freq 10', du_doan: 'Tài', do_tin_cay: 83, mo_ta: '10 phiên có 6 Xỉu' });
   }
 
-  // 7. Freq 15
+  // 9. Freq 15
   if (h.length >= 15) {
     const last15 = h.slice(0, 15);
     const t = last15.filter(r => r === 'Tài').length;
-    if (t >= 10) results.push({ ten: 'Freq 15', du_doan: 'Xỉu', do_tin_cay: 90, mo_ta: '15 phiên có 10 Tài' });
-    else if (t <= 5) results.push({ ten: 'Freq 15', du_doan: 'Tài', do_tin_cay: 90, mo_ta: '15 phiên có 10 Xỉu' });
+    if (t >= 8) results.push({ ten: 'Freq 15', du_doan: 'Xỉu', do_tin_cay: 86, mo_ta: '15 phiên có 8 Tài' });
+    else if (t <= 7) results.push({ ten: 'Freq 15', du_doan: 'Tài', do_tin_cay: 86, mo_ta: '15 phiên có 8 Xỉu' });
   }
 
-  // 8. Markov 1
-  if (h.length >= 3) {
-    const m = memory.markov[1];
-    const last = h[0];
-    for (let i = 0; i < h.length - 1; i++) {
-      const state = h[i + 1];
-      const next = h[i];
-      if (!m[state]) m[state] = { Tài: 0, Xỉu: 0 };
-      m[state][next]++;
-    }
-    const d = m[last];
-    if (d && (d.Tài + d.Xỉu) >= 3) {
-      const p = d.Tài > d.Xỉu ? 'Tài' : 'Xỉu';
-      const total = d.Tài + d.Xỉu;
-      const conf = 60 + (Math.max(d.Tài, d.Xỉu) / total) * 30;
-      results.push({ ten: 'Markov 1', du_doan: p, do_tin_cay: Math.min(90, conf), mo_ta: `Markov1 [${last}]` });
-    }
-  }
-
-  // 9. Markov 2
-  if (h.length >= 4) {
-    const m = memory.markov[2];
-    const last2 = h.slice(0, 2).join('');
-    for (let i = 0; i < h.length - 2; i++) {
-      const state = h.slice(i + 1, i + 3).join('');
-      const next = h[i];
-      if (!m[state]) m[state] = { Tài: 0, Xỉu: 0 };
-      m[state][next]++;
-    }
-    const d = m[last2];
-    if (d && (d.Tài + d.Xỉu) >= 3) {
-      const p = d.Tài > d.Xỉu ? 'Tài' : 'Xỉu';
-      const total = d.Tài + d.Xỉu;
-      const conf = 65 + (Math.max(d.Tài, d.Xỉu) / total) * 30;
-      results.push({ ten: 'Markov 2', du_doan: p, do_tin_cay: Math.min(92, conf), mo_ta: `Markov2 [${last2}]` });
+  // 10-14. Markov 1-5
+  for (let level = 1; level <= 5; level++) {
+    if (h.length >= level + 1) {
+      const m = memory.markov[level];
+      const lastState = h.slice(0, level).join('');
+      for (let i = 0; i < h.length - level; i++) {
+        const state = h.slice(i + 1, i + 1 + level).join('');
+        const next = h[i];
+        if (!m[state]) m[state] = { Tài: 0, Xỉu: 0 };
+        m[state][next]++;
+      }
+      const d = m[lastState];
+      if (d && (d.Tài + d.Xỉu) >= 2) {
+        const p = d.Tài > d.Xỉu ? 'Tài' : 'Xỉu';
+        const total = d.Tài + d.Xỉu;
+        const conf = 55 + level * 5 + (Math.max(d.Tài, d.Xỉu) / total) * 25;
+        results.push({ ten: `Markov ${level}`, du_doan: p, do_tin_cay: Math.min(95, conf), mo_ta: `M${level} [${lastState}]` });
+      }
     }
   }
 
-  // 10. Markov 3
-  if (h.length >= 5) {
-    const m = memory.markov[3];
-    const last3 = h.slice(0, 3).join('');
-    for (let i = 0; i < h.length - 3; i++) {
-      const state = h.slice(i + 1, i + 4).join('');
-      const next = h[i];
-      if (!m[state]) m[state] = { Tài: 0, Xỉu: 0 };
-      m[state][next]++;
-    }
-    const d = m[last3];
-    if (d && (d.Tài + d.Xỉu) >= 2) {
-      const p = d.Tài > d.Xỉu ? 'Tài' : 'Xỉu';
-      const total = d.Tài + d.Xỉu;
-      const conf = 70 + (Math.max(d.Tài, d.Xỉu) / total) * 30;
-      results.push({ ten: 'Markov 3', du_doan: p, do_tin_cay: Math.min(94, conf), mo_ta: `Markov3 [${last3}]` });
-    }
-  }
-
-  // 11. Cycle
+  // 15. Cycle
   if (h.length >= 8) {
     const num = h.map(r => r === 'Tài' ? 1 : 0);
-    const lags = [2, 3, 4, 5, 6];
+    const lags = [2, 3, 4, 5, 6, 7];
     let bestLag = 0, bestCorr = 0;
     for (const lag of lags) {
       if (num.length > lag) {
@@ -416,132 +413,208 @@ function runAlgorithms(h, memory) {
         if (Math.abs(corr) > Math.abs(bestCorr)) { bestCorr = corr; bestLag = lag; }
       }
     }
-    if (Math.abs(bestCorr) > 0.35) {
+    if (Math.abs(bestCorr) > 0.3) {
       const idx = (h.length - 1) % bestLag;
       const val = num[num.length - 1 - idx];
       const p = val === 1 ? 'Tài' : 'Xỉu';
-      const conf = 65 + Math.abs(bestCorr) * 40;
-      results.push({ ten: 'Cycle', du_doan: p, do_tin_cay: Math.min(90, conf), mo_ta: `Chu kỳ ${bestLag} (r=${bestCorr.toFixed(2)})` });
+      const conf = 60 + Math.abs(bestCorr) * 50;
+      results.push({ ten: 'Cycle', du_doan: p, do_tin_cay: Math.min(92, conf), mo_ta: `Chu kỳ ${bestLag} (r=${bestCorr.toFixed(2)})` });
     }
   }
 
-  // 12. Skew Kurt
+  // 16. Skew Kurt
   if (h.length >= 8) {
     const num = h.map(r => r === 'Tài' ? 1 : 0);
     const skew = skewness(num);
     const kurt = kurtosis(num);
     const m = mean(num);
-    const score = Math.abs(skew) * 0.6 + Math.abs(kurt) * 0.4;
-    if (score > 1) {
+    const score = Math.abs(skew) * 0.5 + Math.abs(kurt) * 0.3;
+    if (score > 0.8) {
       const p = m > 0.5 ? 'Xỉu' : 'Tài';
-      const conf = 65 + score * 15;
+      const conf = 60 + score * 20;
       results.push({ ten: 'Skew Kurt', du_doan: p, do_tin_cay: Math.min(88, conf), mo_ta: `Skew=${skew.toFixed(2)}, Kurt=${kurt.toFixed(2)}` });
     }
   }
 
-  // 13. Entropy Std
+  // 17. Entropy Std
   if (h.length >= 8) {
     const num = h.map(r => r === 'Tài' ? 1 : 0);
     const ent = entropy(h);
     const std = stddev(num);
     const m = mean(num);
-    const stability = (1 - ent) * 0.6 + std * 0.4;
-    if (stability > 0.6) {
+    const stability = (1 - ent) * 0.5 + std * 0.3;
+    if (stability > 0.5) {
       const p = m > 0.5 ? 'Xỉu' : 'Tài';
-      const conf = 65 + stability * 25;
-      results.push({ ten: 'Entropy Std', du_doan: p, do_tin_cay: Math.min(90, conf), mo_ta: `Entropy=${ent.toFixed(2)}, Std=${std.toFixed(2)}` });
+      const conf = 60 + stability * 30;
+      results.push({ ten: 'Entropy Std', du_doan: p, do_tin_cay: Math.min(88, conf), mo_ta: `Ent=${ent.toFixed(2)}, Std=${std.toFixed(2)}` });
     }
   }
 
-  // 14. RSI
-  if (h.length >= 15) {
-    const rsi = rsiCalculator(h, 14);
-    if (rsi > 70) {
-      results.push({ ten: 'RSI', du_doan: 'Xỉu', do_tin_cay: 85, mo_ta: `RSI=${rsi.toFixed(1)} (Quá mua)` });
-    } else if (rsi < 30) {
-      results.push({ ten: 'RSI', du_doan: 'Tài', do_tin_cay: 85, mo_ta: `RSI=${rsi.toFixed(1)} (Quá bán)` });
+  // 18. RSI
+  if (h.length >= 10) {
+    const rsi = rsiCalculator(h, 10);
+    if (rsi > 65) {
+      results.push({ ten: 'RSI', du_doan: 'Xỉu', do_tin_cay: 75, mo_ta: `RSI=${rsi.toFixed(1)} (Quá mua)` });
+    } else if (rsi < 35) {
+      results.push({ ten: 'RSI', du_doan: 'Tài', do_tin_cay: 75, mo_ta: `RSI=${rsi.toFixed(1)} (Quá bán)` });
     }
   }
 
-  // 15. MACD
-  if (h.length >= 26) {
-    const { macd, signal } = macdCalculator(h);
-    if (macd > signal && macd > 0.1) {
-      results.push({ ten: 'MACD', du_doan: 'Xỉu', do_tin_cay: 88, mo_ta: `MACD cắt lên (${macd.toFixed(3)})` });
-    } else if (macd < signal && macd < -0.1) {
-      results.push({ ten: 'MACD', du_doan: 'Tài', do_tin_cay: 88, mo_ta: `MACD cắt xuống (${macd.toFixed(3)})` });
-    }
-  }
-
-  // 16. Bollinger
+  // 19. MACD
   if (h.length >= 20) {
-    const bb = bollingerBands(h, 20, 2);
+    const { macd, signal } = macdCalculator(h);
+    if (macd > signal && macd > 0.05) {
+      results.push({ ten: 'MACD', du_doan: 'Xỉu', do_tin_cay: 78, mo_ta: `MACD cắt lên (${macd.toFixed(3)})` });
+    } else if (macd < signal && macd < -0.05) {
+      results.push({ ten: 'MACD', du_doan: 'Tài', do_tin_cay: 78, mo_ta: `MACD cắt xuống (${macd.toFixed(3)})` });
+    }
+  }
+
+  // 20. Bollinger
+  if (h.length >= 15) {
+    const bb = bollingerBands(h, 15, 2);
     const num = h.map(r => r === 'Tài' ? 1 : 0);
     const current = num[0];
     if (current > bb.upper) {
-      results.push({ ten: 'Bollinger', du_doan: 'Xỉu', do_tin_cay: 82, mo_ta: `Chạm upper (${bb.upper.toFixed(2)})` });
+      results.push({ ten: 'Bollinger', du_doan: 'Xỉu', do_tin_cay: 76, mo_ta: `Chạm upper (${bb.upper.toFixed(2)})` });
     } else if (current < bb.lower) {
-      results.push({ ten: 'Bollinger', du_doan: 'Tài', do_tin_cay: 82, mo_ta: `Chạm lower (${bb.lower.toFixed(2)})` });
+      results.push({ ten: 'Bollinger', du_doan: 'Tài', do_tin_cay: 76, mo_ta: `Chạm lower (${bb.lower.toFixed(2)})` });
     }
   }
 
-  // 17. Stochastic
-  if (h.length >= 14) {
-    const stoch = stochastic(h, 14);
-    if (stoch > 80) {
-      results.push({ ten: 'Stochastic', du_doan: 'Xỉu', do_tin_cay: 80, mo_ta: `Stoch=${stoch.toFixed(1)} (Quá mua)` });
-    } else if (stoch < 20) {
-      results.push({ ten: 'Stochastic', du_doan: 'Tài', do_tin_cay: 80, mo_ta: `Stoch=${stoch.toFixed(1)} (Quá bán)` });
+  // 21. Stochastic
+  if (h.length >= 10) {
+    const stoch = stochastic(h, 10);
+    if (stoch > 75) {
+      results.push({ ten: 'Stochastic', du_doan: 'Xỉu', do_tin_cay: 74, mo_ta: `Stoch=${stoch.toFixed(1)}` });
+    } else if (stoch < 25) {
+      results.push({ ten: 'Stochastic', du_doan: 'Tài', do_tin_cay: 74, mo_ta: `Stoch=${stoch.toFixed(1)}` });
     }
   }
 
-  // 18. Williams R
-  if (h.length >= 14) {
-    const willR = williamsR(h, 14);
-    if (willR < -80) {
-      results.push({ ten: 'Williams R', du_doan: 'Tài', do_tin_cay: 80, mo_ta: `WilliamsR=${willR.toFixed(1)} (Quá bán)` });
-    } else if (willR > -20) {
-      results.push({ ten: 'Williams R', du_doan: 'Xỉu', do_tin_cay: 80, mo_ta: `WilliamsR=${willR.toFixed(1)} (Quá mua)` });
+  // 22. Williams R
+  if (h.length >= 10) {
+    const willR = williamsR(h, 10);
+    if (willR < -75) {
+      results.push({ ten: 'Williams R', du_doan: 'Tài', do_tin_cay: 74, mo_ta: `WilliamsR=${willR.toFixed(1)}` });
+    } else if (willR > -25) {
+      results.push({ ten: 'Williams R', du_doan: 'Xỉu', do_tin_cay: 74, mo_ta: `WilliamsR=${willR.toFixed(1)}` });
     }
   }
 
-  // 19. CCI
-  if (h.length >= 20) {
-    const cci = cciCalculator(h, 20);
-    if (cci > 100) {
-      results.push({ ten: 'CCI', du_doan: 'Xỉu', do_tin_cay: 78, mo_ta: `CCI=${cci.toFixed(1)} (Quá mua)` });
-    } else if (cci < -100) {
-      results.push({ ten: 'CCI', du_doan: 'Tài', do_tin_cay: 78, mo_ta: `CCI=${cci.toFixed(1)} (Quá bán)` });
-    }
-  }
-
-  // 20. ADX
+  // 23. CCI
   if (h.length >= 15) {
-    const adx = adxCalculator(h, 14);
-    if (adx > 25) {
-      const num = h.map(r => r === 'Tài' ? 1 : 0);
-      const recent = num.slice(0, 5);
-      const trend = mean(recent) > 0.5 ? 'Tài' : 'Xỉu';
-      results.push({ ten: 'ADX', du_doan: trend, do_tin_cay: 80, mo_ta: `ADX=${adx.toFixed(1)} (Xu hướng mạnh)` });
+    const cci = cciCalculator(h, 15);
+    if (cci > 80) {
+      results.push({ ten: 'CCI', du_doan: 'Xỉu', do_tin_cay: 72, mo_ta: `CCI=${cci.toFixed(1)}` });
+    } else if (cci < -80) {
+      results.push({ ten: 'CCI', du_doan: 'Tài', do_tin_cay: 72, mo_ta: `CCI=${cci.toFixed(1)}` });
     }
+  }
+
+  // 24. ADX
+  if (h.length >= 12) {
+    const adx = adxCalculator(h, 12);
+    if (adx > 20) {
+      const num = h.map(r => r === 'Tài' ? 1 : 0);
+      const trend = mean(num.slice(0, 4)) > 0.5 ? 'Tài' : 'Xỉu';
+      results.push({ ten: 'ADX', du_doan: trend, do_tin_cay: 72, mo_ta: `ADX=${adx.toFixed(1)}` });
+    }
+  }
+
+  // 25. Aroon
+  if (h.length >= 10) {
+    const aroon = aroonIndicator(h, 10);
+    if (aroon.up > 70 && aroon.up > aroon.down) {
+      results.push({ ten: 'Aroon', du_doan: 'Xỉu', do_tin_cay: 72, mo_ta: `Aroon Up=${aroon.up.toFixed(1)}` });
+    } else if (aroon.down > 70 && aroon.down > aroon.up) {
+      results.push({ ten: 'Aroon', du_doan: 'Tài', do_tin_cay: 72, mo_ta: `Aroon Down=${aroon.down.toFixed(1)}` });
+    }
+  }
+
+  // 26. CMF
+  if (h.length >= 15) {
+    const cmf = chaikinMoneyFlow(h, 15);
+    if (cmf > 0.05) {
+      results.push({ ten: 'CMF', du_doan: 'Xỉu', do_tin_cay: 70, mo_ta: `CMF=${cmf.toFixed(3)}` });
+    } else if (cmf < -0.05) {
+      results.push({ ten: 'CMF', du_doan: 'Tài', do_tin_cay: 70, mo_ta: `CMF=${cmf.toFixed(3)}` });
+    }
+  }
+
+  // 27. OBV
+  if (h.length >= 8) {
+    const obv = obvCalculator(h);
+    if (obv > 3) {
+      results.push({ ten: 'OBV', du_doan: 'Xỉu', do_tin_cay: 68, mo_ta: `OBV=${obv.toFixed(1)}` });
+    } else if (obv < -3) {
+      results.push({ ten: 'OBV', du_doan: 'Tài', do_tin_cay: 68, mo_ta: `OBV=${obv.toFixed(1)}` });
+    }
+  }
+
+  // 28. Trend Reversal
+  if (h.length >= 4) {
+    const num = h.map(r => r === 'Tài' ? 1 : 0);
+    const recent = mean(num.slice(0, 2));
+    const older = mean(num.slice(2, 4));
+    const diff = recent - older;
+    if (diff > 0.25) {
+      results.push({ ten: 'Trend Reversal', du_doan: 'Xỉu', do_tin_cay: 72, mo_ta: 'Đảo chiều giảm' });
+    } else if (diff < -0.25) {
+      results.push({ ten: 'Trend Reversal', du_doan: 'Tài', do_tin_cay: 72, mo_ta: 'Đảo chiều tăng' });
+    }
+  }
+
+  // 29. Mean Reversion
+  if (h.length >= 6) {
+    const num = h.map(r => r === 'Tài' ? 1 : 0);
+    const meanVal = mean(num);
+    const current = num[0];
+    if (current > meanVal + 0.15) {
+      results.push({ ten: 'Mean Reversion', du_doan: 'Xỉu', do_tin_cay: 68, mo_ta: 'Quá cao, hồi về' });
+    } else if (current < meanVal - 0.15) {
+      results.push({ ten: 'Mean Reversion', du_doan: 'Tài', do_tin_cay: 68, mo_ta: 'Quá thấp, hồi về' });
+    }
+  }
+
+  // 30. Neural
+  if (h.length >= 7) {
+    const num = h.map(r => r === 'Tài' ? 1 : 0);
+    const weights = memory.neural.weights;
+    const input = [
+      num[0] || 0.5, num[1] || 0.5, num[2] || 0.5,
+      num[3] || 0.5, num[4] || 0.5, num[5] || 0.5,
+      num[6] || 0.5
+    ];
+    let sum = memory.neural.bias;
+    for (let i = 0; i < 7; i++) {
+      sum += input[i] * weights[i];
+    }
+    const output = 1 / (1 + Math.exp(-sum));
+    const p = output > 0.5 ? 'Tài' : 'Xỉu';
+    const conf = 55 + Math.abs(output - 0.5) * 80;
+    results.push({ ten: 'Neural', du_doan: p, do_tin_cay: Math.min(90, conf), mo_ta: `NN=${output.toFixed(3)}` });
   }
 
   return results;
 }
 
 // ================================================================
-// TỔNG HỢP KẾT QUẢ
+// TỔNG HỢP KẾT QUẢ - TRẢ VỀ TỈ LỆ CHO TỪNG PHIÊN
 // ================================================================
 function tongHopKetQua(results) {
   if (!results || results.length === 0) {
-    return { pred: 'Tài', conf: 50, total: 0 };
+    return { pred: 'Tài', conf: 50, total: 0, voteTai: 0, voteXiu: 0 };
   }
 
   const vote = { Tài: 0, Xỉu: 0 };
   const weightVote = { Tài: 0, Xỉu: 0 };
+  const confVote = { Tài: 0, Xỉu: 0 };
+
   for (const r of results) {
     vote[r.du_doan]++;
     weightVote[r.du_doan] += r.do_tin_cay / 100;
+    confVote[r.du_doan] += r.do_tin_cay;
   }
 
   let finalPred = 'Tài';
@@ -557,7 +630,14 @@ function tongHopKetQua(results) {
   const consensusBonus = (Math.abs(vote.Tài - vote.Xỉu) / results.length) * 20;
   const finalConf = Math.min(99, Math.round(baseConf + consensusBonus));
 
-  return { pred: finalPred, conf: finalConf, total: results.length };
+  return {
+    pred: finalPred,
+    conf: finalConf,
+    total: results.length,
+    voteTai: vote.Tài,
+    voteXiu: vote.Xỉu,
+    chiTiet: results.slice(0, 10) // Top 10 chi tiết
+  };
 }
 
 // ================================================================
@@ -578,7 +658,7 @@ async function fetchData(url) {
 }
 
 // ================================================================
-// XỬ LÝ CHÍNH - LƯU VÀO FILE SAU MỖI LẦN CẬP NHẬT
+// XỬ LÝ CHÍNH - LƯU DATA, KHÔNG HIỂN THỊ ĐÚNG SAI
 // ================================================================
 async function processGame(gameKey) {
   const config = GAME_CONFIG[gameKey];
@@ -591,14 +671,14 @@ async function processGame(gameKey) {
   const phien = data.phien;
   const kq = data.ket_qua;
 
-  // Kiểm tra phiên trùng
-  const exists = g.history.find(h => h.phien === phien);
-  if (!exists) {
+  // Lưu lịch sử
+  if (!g.history.find(h => h.phien === phien)) {
     g.history.unshift({ phien, ket_qua: kq, time: Date.now() });
     if (g.history.length > 500) g.history.pop();
   }
 
-  // Kiểm tra dự đoán cũ
+  // Cập nhật thống kê tổng thể (KHÔNG HIỂN THỊ TRONG DỰ ĐOÁN)
+  // Chỉ dùng để tính tỉ lệ tổng thể riêng
   if (g.predictHistory.length > 0 && g.predictHistory[0].status === 'CHỜ') {
     const last = g.predictHistory[0];
     if (last.pred) {
@@ -608,27 +688,22 @@ async function processGame(gameKey) {
         g.stats.winStreak++;
         if (g.stats.winStreak > g.stats.maxWinStreak) g.stats.maxWinStreak = g.stats.winStreak;
         g.stats.loseStreak = 0;
-        g.stats.tongTien += 100;
       } else {
         g.stats.sai++;
         g.stats.loseStreak++;
         if (g.stats.loseStreak > g.stats.maxLoseStreak) g.stats.maxLoseStreak = g.stats.loseStreak;
         g.stats.winStreak = 0;
-        g.stats.tongTien -= 100;
       }
       g.stats.tong++;
       g.stats.tiLe = ((g.stats.dung / g.stats.tong) * 100).toFixed(1) + '%';
-      g.stats.loiNhuan = g.stats.tongTien;
-      g.stats.tyLeThang = g.stats.tong > 0 ? ((g.stats.dung / g.stats.tong) * 100) : 0;
       last.status = dung ? 'ĐÚNG' : 'SAI';
       last.thuc_te = kq;
     }
   }
 
-  // Lấy lịch sử Tài/Xỉu
   const taiXiu = g.history.map(h => h.ket_qua).filter(k => k === 'Tài' || k === 'Xỉu');
 
-  // Chạy thuật toán
+  // Chạy 30 thuật toán
   const algoResults = runAlgorithms(taiXiu, g.memory);
   const finalResult = tongHopKetQua(algoResults);
 
@@ -652,34 +727,49 @@ async function processGame(gameKey) {
     g.statsAdv.williamsR = williamsR(taiXiu);
     g.statsAdv.cci = cciCalculator(taiXiu);
     g.statsAdv.adx = adxCalculator(taiXiu);
+    const aroon = aroonIndicator(taiXiu);
+    g.statsAdv.aroonUp = aroon.up;
+    g.statsAdv.aroonDown = aroon.down;
+    g.statsAdv.cmf = chaikinMoneyFlow(taiXiu);
+    g.statsAdv.obv = obvCalculator(taiXiu);
   }
 
-  // Lưu dự đoán mới
+  // Lưu dự đoán mới - KHÔNG HIỂN THỊ ĐÚNG SAI TRONG NÀY
   g.predictHistory.unshift({
     phien: phien,
     pred: finalResult.pred,
     conf: finalResult.conf,
+    chiTiet: finalResult.chiTiet,
+    voteTai: finalResult.voteTai,
+    voteXiu: finalResult.voteXiu,
+    soThuatToan: finalResult.total,
     status: 'CHỜ',
     time: Date.now()
   });
   if (g.predictHistory.length > 100) g.predictHistory.pop();
 
-  // LƯU VÀO FILE
   writeData(store);
 
-  // Trả về kết quả gọn
+  // ================================================================
+  // TRẢ VỀ - KHÔNG CÓ ĐÚNG SAI, MỖI PHIÊN CÓ TỈ LỆ RIÊNG
+  // ================================================================
   return {
     phiên: phien,
     kết_quả: kq,
     phiên_dự_đoán: phien + 1,
     dự_đoán: finalResult.pred,
-    tỉ_lệ: g.stats.tiLe || '0.0%',
-    đúng: g.stats.dung || 0,
-    sai: g.stats.sai || 0,
-    win_streak: g.stats.winStreak || 0,
-    lose_streak: g.stats.loseStreak || 0,
-    lợi_nhuận: g.stats.loiNhuan || 0,
-    số_thuật_toán: finalResult.total || 0,
+    tỉ_lệ_phiên_này: finalResult.conf + '%',
+    số_thuật_toán: finalResult.total,
+    vote: `Tài:${finalResult.voteTai} | Xỉu:${finalResult.voteXiu}`,
+    chi_tiet_thuật_toán: finalResult.chiTiet,
+    thống_kê_tổng_thể: {
+      tỉ_lệ_chung: g.stats.tiLe || '0%',
+      đúng: g.stats.dung || 0,
+      sai: g.stats.sai || 0,
+      tổng: g.stats.tong || 0,
+      win_streak: g.stats.winStreak || 0,
+      lose_streak: g.stats.loseStreak || 0
+    },
     id: '@tranhoang2286'
   };
 }
@@ -690,15 +780,15 @@ async function processGame(gameKey) {
 
 app.get('/', (req, res) => {
   res.json({
-    name: '🔥 LC79 - LƯU DATA TỰ ĐỘNG 🔥',
-    version: '12.0.0',
+    name: '🔥 LC79 PRO - MỖI PHIÊN TỈ LỆ RIÊNG 🔥',
+    version: '15.0.0',
     games: Object.keys(GAME_CONFIG),
     endpoints: {
       'DỰ ĐOÁN': '/api/predict/:game',
       'LỊCH SỬ': '/api/history/:game',
       'THỐNG KÊ': '/api/stats/:game'
     },
-    note: '✅ Dữ liệu được lưu vào file data.json, F5 không mất',
+    note: '✅ Mỗi phiên có tỉ lệ riêng, không hiển thị đúng sai',
     id: '@tranhoang2286'
   });
 });
@@ -720,7 +810,14 @@ app.get('/api/history/:game', (req, res) => {
     game: req.params.game,
     tong: g.history.length,
     lich_su_game: g.history.slice(0, limit),
-    lich_su_du_doan: g.predictHistory.slice(0, limit),
+    lich_su_du_doan: g.predictHistory.slice(0, limit).map(p => ({
+      phien: p.phien,
+      du_doan: p.pred,
+      do_tin_cay: p.conf + '%',
+      vote: `Tài:${p.voteTai} | Xỉu:${p.voteXiu}`,
+      status: p.status,
+      thuc_te: p.thuc_te || 'CHỜ'
+    })),
     id: '@tranhoang2286'
   });
 });
@@ -738,11 +835,12 @@ app.get('/api/stats/:game', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n============================================================`);
-  console.log(`🔥 LC79 - LƯU DATA TỰ ĐỘNG`);
+  console.log(`🔥 LC79 PRO - MỖI PHIÊN TỈ LỆ RIÊNG`);
   console.log(`============================================================`);
-  console.log(`✅ Dữ liệu được lưu vào file data.json`);
-  console.log(`✅ F5 không làm mất tỉ lệ và lịch sử`);
-  console.log(`📌 API: /api/predict/:game`);
+  console.log(`✅ 30 THUẬT TOÁN NÂNG CẤP`);
+  console.log(`✅ MỖI PHIÊN CÓ TỈ LỆ KHÁC NHAU`);
+  console.log(`✅ KHÔNG HIỂN THỊ ĐÚNG SAI TRONG DỰ ĐOÁN`);
+  console.log(`📌 /api/predict/:game - Dự đoán phiên mới`);
   console.log(`============================================================`);
   console.log(`🚀 PORT: ${PORT}`);
   console.log(`🏷️ ID: @tranhoang2286`);
