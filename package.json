@@ -1,6 +1,6 @@
 {
-  "name": "lc79-super-ai",
-  "version": "5.0.0",
+  "name": "lc79-vip-pro",
+  "version": "6.0.0",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
