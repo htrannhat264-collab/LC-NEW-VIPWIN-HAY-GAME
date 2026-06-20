@@ -344,7 +344,6 @@ function runAllAlgorithms(h, m) {
     try {
       let r;
       if (algo.name.includes('Markov')) {
-        // Markov cần truyền memory
         const markovKey = 'markov' + algo.name.replace('Markov ', '');
         const memory = m[markovKey] || (m[markovKey] = {});
         r = algo.fn(h, memory);
@@ -370,7 +369,7 @@ function runAllAlgorithms(h, m) {
 // ================================================================
 function tongHopKetQua(results) {
   if (!results || results.length === 0) {
-    return { pred: 'Tài', conf: 50, total: 0 };
+    return { pred: 'Tài', conf: 50, total: 0, voteTai: 0, voteXiu: 0 };
   }
 
   const vote = { Tài: 0, Xỉu: 0 };
@@ -419,7 +418,7 @@ async function fetchData(url) {
 // ================================================================
 // XỬ LÝ CHÍNH - TÁCH BIỆT DỰ ĐOÁN VÀ CHI TIẾT
 // ================================================================
-async function processGame(gameKey, useAI) {
+async function processGame(gameKey, useAI, returnDetail = false) {
   const config = GAME_CONFIG[gameKey];
   if (!config) throw new Error('Game không tồn tại');
 
@@ -516,7 +515,7 @@ async function processGame(gameKey, useAI) {
   });
   if (g.predictHistory.length > 100) g.predictHistory.pop();
 
-  return {
+  const baseResponse = {
     phien: phien,
     ket_qua: kq,
     du_doan: finalResult.pred,
@@ -530,10 +529,19 @@ async function processGame(gameKey, useAI) {
     win_streak: g.stats.winStreak,
     lose_streak: g.stats.loseStreak,
     link: useAI ? '🤖 VIP AI' : '⚡ VIP RAW',
-    id: '@tranhoang2286',
-    // CHI TIẾT THUẬT TOÁN - TÁCH RIÊNG
-    chi_tiet_thuat_toan: algoResults.slice(0, 10) // Chỉ lấy 10 cái đầu để gọn
+    id: '@tranhoang2286'
   };
+
+  if (returnDetail) {
+    return {
+      ...baseResponse,
+      chi_tiet_15_thuat_toan: algoResults,
+      thong_ke_nang_cao: g.statsAdv,
+      lich_su_gan_day: taiXiu.slice(0, 10)
+    };
+  }
+
+  return baseResponse;
 }
 
 // ================================================================
@@ -546,8 +554,8 @@ app.get('/', (req, res) => {
     version: '6.0.0',
     games: Object.keys(GAME_CONFIG),
     endpoints: {
-      'DỰ ĐOÁN (Có chi tiết thuật toán)': '/api/predict/:game?type=raw|ai',
-      'CHỈ DỰ ĐOÁN (Không chi tiết)': '/api/predict/simple/:game?type=raw|ai',
+      'DỰ ĐOÁN + CHI TIẾT': '/api/predict/detail/:game?type=raw|ai',
+      'CHỈ DỰ ĐOÁN (KHÔNG CHI TIẾT)': '/api/predict/simple/:game?type=raw|ai',
       'CHỈ CHI TIẾT THUẬT TOÁN': '/api/algorithms/:game?type=raw|ai',
       'Lịch sử': '/api/history/:game',
       'Thống kê': '/api/stats/:game'
@@ -557,11 +565,11 @@ app.get('/', (req, res) => {
 });
 
 // === API 1: DỰ ĐOÁN + CHI TIẾT THUẬT TOÁN (GỘP LẠI) ===
-app.get('/api/predict/:game', async (req, res) => {
+app.get('/api/predict/detail/:game', async (req, res) => {
   try {
     const type = req.query.type || 'ai';
     const useAI = type === 'ai';
-    const result = await processGame(req.params.game, useAI);
+    const result = await processGame(req.params.game, useAI, true);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message, id: '@tranhoang2286' });
@@ -573,9 +581,7 @@ app.get('/api/predict/simple/:game', async (req, res) => {
   try {
     const type = req.query.type || 'ai';
     const useAI = type === 'ai';
-    const result = await processGame(req.params.game, useAI);
-    // Xóa chi tiết thuật toán
-    delete result.chi_tiet_thuat_toan;
+    const result = await processGame(req.params.game, useAI, false);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message, id: '@tranhoang2286' });
@@ -688,11 +694,15 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔥 LC79 VIP - TÁCH BIỆT CHI TIẾT`);
   console.log(`============================================================`);
   console.log(`📌 API DỰ ĐOÁN + CHI TIẾT:`);
-  console.log(`   GET /api/predict/:game?type=raw|ai`);
+  console.log(`   GET /api/predict/detail/:game?type=raw|ai`);
   console.log(`📌 API CHỈ DỰ ĐOÁN (KHÔNG CHI TIẾT):`);
   console.log(`   GET /api/predict/simple/:game?type=raw|ai`);
   console.log(`📌 API CHỈ CHI TIẾT THUẬT TOÁN:`);
   console.log(`   GET /api/algorithms/:game?type=raw|ai`);
+  console.log(`📌 API LỊCH SỬ:`);
+  console.log(`   GET /api/history/:game`);
+  console.log(`📌 API THỐNG KÊ:`);
+  console.log(`   GET /api/stats/:game`);
   console.log(`============================================================`);
   console.log(`🚀 PORT: ${PORT}`);
   console.log(`🏷️ ID: @tranhoang2286`);
